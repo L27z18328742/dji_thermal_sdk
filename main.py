@@ -1,33 +1,45 @@
-# 检测温度
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import requests
+from fastapi.responses import JSONResponse
+from dji_sdk import mark_hot_points, init_dji_sdk, get_temperature_ndarray, apply_nms
+import uvicorn
+import os
+import io
+import base64
+import shutil
+import cv2
+import datetime
+from urllib.parse import urlparse
+import numpy as np
+from ultralytics import YOLO
+from config import dji_thermal_sdk, yolo_checkpoint
+
+model = YOLO(yolo_checkpoint)
+
+# 初始化大疆sdk
+init_dji_sdk(dji_thermal_sdk)
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 允许所有源
+    allow_credentials=True,
+    allow_methods=["*"],  # 允许所有方法
+    allow_headers=["*"],  # 允许所有头
+)
 
 
+class ImageRequestWithThreshold(BaseModel):
+    image_url: str
+    threshold: float
 
-## 检测图片中超出阈值的点
-
-原图：
-
-![](dataset/H20T/DJI_0001_R.JPG)
-
-识别后结果：
-
-![](processed_image_threshold.jpg)
-
-## 检测图片中套管，并给出套管区域最高温度
-
-原图：
-
-![](dataset/14-20230523144700025699079060065986.jpg)
-
-识别后结果：
-
-![](processed_image_maxtemp.jpg)
+class ImageRequest(BaseModel):
+    image_url: str
 
 
-
-## API调用
-
-### 检测图片中超出阈值的点
-```python
 @app.post("/process_image_threshold/")
 async def process_image_threshold(request: ImageRequestWithThreshold):
 
@@ -51,14 +63,24 @@ async def process_image_threshold(request: ImageRequestWithThreshold):
                                  "image": encoded_image, 
                                  "is_exist_exception": is_exist_exception, 
                                  "time": now_time})
-```
 
-### 检测图片中套管，标出温度最高值
-
-```python
 
 @app.post("/process_insulator/")
 async def process_insulator(request: ImageRequest):
+    # try:
+    #     # 下载图片
+    #     response = requests.get(request.image_url)
+    #     filename = request.image_url.split("/")[-1]
+    #     if response.status_code == 200:
+    #         raw_path = "./{}".format(filename)
+    #         with open(raw_path, "wb") as f:
+    #             f.write(response.content)
+    #     else:
+    #         return {"error": "Failed to download image from URL"}
+    # except Exception as e:
+    #     return {"error": str(e)}
+    
+    # img = cv2.imread(request.image_url)
 
     # 请求 URL
     response = requests.get(request.image_url)
@@ -120,7 +142,8 @@ async def process_insulator(request: ImageRequest):
                                  "image": encoded_image, 
                                  "boxes": boxes, 
                                  "max_temps": max_temps,
-                                 "time": now_time})                        
-```
+                                 "time": now_time})
 
-
+if __name__ == "__main__":
+    # uvicorn.run("main:app", host="0.0.0.0", port=8231, reload=True, workers=1)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000)
